@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Counterfire Dashboard - Unit Summaries</title>
+
+<!-- Bootstrap 5 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<style>
+  body {
+    background-color: #121212;
+    color: #eee;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 1rem;
+  }
+  h2, h3 {
+    color: #0dcaf0;
+  }
+  #map {
+    height: 500px;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+  }
+  .unit-table {
+    margin-top: 1.5rem;
+    border-radius: 10px;
+    background: #1e1e1e;
+    padding: 1rem;
+  }
+  table {
+    color: #fff;
+  }
+  table th, table td {
+    border: 1px solid #444;
+    text-align: center;
+    padding: 0.5rem 0.75rem;
+  }
+  table th {
+    background-color: #222;
+  }
+  .time-bar {
+    margin: 2rem 0 1rem;
+    text-align: center;
+  }
+  #histogram {
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    height: 100px;
+    gap: 2px;
+  }
+  .bar {
+    width: 3%;
+    background-color: #3498db;
+    border-radius: 3px 3px 0 0;
+    transition: background-color 0.3s;
+  }
+  .bar:hover {
+    background-color: #0dcaf0;
+  }
+  .bar-labels {
+    color: #888;
+    margin-top: 6px;
+    font-size: 0.9rem;
+    letter-spacing: 0.5rem;
+  }
+  .d3a-block {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+  }
+  .d3a-box {
+    background: #1e1e1e;
+    border-radius: 10px;
+    padding: 1rem;
+    flex: 1 1 22%;
+    min-width: 220px;
+    border: 1px solid #333;
+  }
+  .d3a-box h5 {
+    color: #0dcaf0;
+    margin-bottom: 0.5rem;
+  }
+</style>
+</head>
+<body>
+
+<h2>Counterfire Dashboard</h2>
+<div id="map"></div>
+
+<div class="time-bar">
+  <div id="histogram"></div>
+  <div class="bar-labels">00Z  06Z  12Z  18Z  24Z</div>
+</div>
+
+<div id="tables-container"></div>
+
+<div class="d3a-block">
+  <div class="d3a-box">
+    <h5>Decide</h5>
+    <p>The enemy selects targets focusing on logistics hubs and supply routes, aiming to disrupt movement during key hours.</p>
+  </div>
+  <div class="d3a-box">
+    <h5>Detect</h5>
+    <p>Launch sites are frequently relocated and camouflaged, detected mainly through indirect fire reports and ISR monitoring.</p>
+  </div>
+  <div class="d3a-box">
+    <h5>Deliver</h5>
+    <p>Engagements involve quick mortar and rocket barrages with artillery follow-ups, maximizing area denial.</p>
+  </div>
+  <div class="d3a-box">
+    <h5>Assess</h5>
+    <p>Rapid battle damage assessments occur via drones and ground reports, enabling swift counterfire responses.</p>
+  </div>
+</div>
+
+<!-- JS Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
+<script>
+  // Initialize map
+  const map = L.map('map').setView([34.12, 36.33], 9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Fire acquisition data (at least 5 per unit, 4 units total)
+  const acquisitions = [
+    // 4ID (6 acquisitions)
+    { id: 1, poo_mgrs: "38S LB 42317 96325", poo: [34.15, 36.28], poi_mgrs: "38S LB 42819 96450", poi: [34.18, 36.31], type: "Mortar", qty: 3, dtg: "20250820 0412Z", unit: "4ID", fuse: "VT", damage: "Minimal", counterfire: true },
+    { id: 2, poo_mgrs: "38S LB 42400 96250", poo: [34.15, 36.26], poi_mgrs: "38S LB 42900 96400", poi: [34.18, 36.29], type: "Mortar", qty: 2, dtg: "20250820 2000Z", unit: "4ID", fuse: "VT", damage: "Light", counterfire: false },
+    { id: 3, poo_mgrs: "38S LB 43000 96100", poo: [34.18, 36.24], poi_mgrs: "38S LB 43500 96350", poi: [34.21, 36.27], type: "Artillery", qty: 4, dtg: "20250820 1200Z", unit: "4ID", fuse: "VT", damage: "None", counterfire: true },
+    { id: 4, poo_mgrs: "38S LB 41700 96100", poo: [34.08, 36.24], poi_mgrs: "38S LB 42200 96300", poi: [34.11, 36.27], type: "Rocket", qty: 3, dtg: "20250820 1900Z", unit: "4ID", fuse: "PD", damage: "None", counterfire: false },
+    { id: 5, poo_mgrs: "38S LB 42000 96000", poo: [34.12, 36.20], poi_mgrs: "38S LB 42500 96200", poi: [34.15, 36.23], type: "Mortar", qty: 5, dtg: "20250820 0815Z", unit: "4ID", fuse: "PD", damage: "Moderate", counterfire: true },
+    { id: 6, poo_mgrs: "38S LB 42450 96300", poo: [34.16, 36.27], poi_mgrs: "38S LB 42950 96450", poi: [34.19, 36.30], type: "Rocket", qty: 6, dtg: "20250820 1700Z", unit: "4ID", fuse: "PD", damage: "Moderate", counterfire: false },
+
+    // 1AD (5 acquisitions)
+    { id: 7, poo_mgrs: "38S LB 41317 96225", poo: [34.10, 36.26], poi_mgrs: "38S LB 41819 96350", poi: [34.12, 36.29], type: "Rocket", qty: 6, dtg: "20250820 0505Z", unit: "1AD", fuse: "PD", damage: "Moderate", counterfire: true },
+    { id: 8, poo_mgrs: "38S LB 42800 96500", poo: [34.17, 36.34], poi_mgrs: "38S LB 43300 96650", poi: [34.20, 36.36], type: "Artillery", qty: 6, dtg: "20250820 2100Z", unit: "1AD", fuse: "Delay", damage: "Moderate", counterfire: false },
+    { id: 9, poo_mgrs: "38S LB 41200 96000", poo: [34.07, 36.20], poi_mgrs: "38S LB 41700 96200", poi: [34.09, 36.23], type: "Rocket", qty: 2, dtg: "20250820 1300Z", unit: "1AD", fuse: "PD", damage: "Minimal", counterfire: true },
+    { id: 10, poo_mgrs: "38S LB 42950 96510", poo: [34.19, 36.35], poi_mgrs: "38S LB 43500 96550", poi: [34.21, 36.38], type: "Artillery", qty: 7, dtg: "20250820 0800Z", unit: "1AD", fuse: "Delay", damage: "Minimal", counterfire: false },
+    { id: 11, poo_mgrs: "38S LB 42100 96150", poo: [34.14, 36.25], poi_mgrs: "38S LB 42600 96300", poi: [34.16, 36.28], type: "Mortar", qty: 4, dtg: "20250820 1000Z", unit: "1AD", fuse: "VT", damage: "Light", counterfire: true },
+
+    // 101AB (5 acquisitions)
+    { id: 12, poo_mgrs: "38S LB 44000 96000", poo: [34.22, 36.20], poi_mgrs: "38S LB 44500 96200", poi: [34.25, 36.23], type: "Rocket", qty: 5, dtg: "20250820 2300Z", unit: "101AB", fuse: "PD", damage: "Moderate", counterfire: true },
+    { id: 13, poo_mgrs: "38S LB 44200 96100", poo: [34.24, 36.21], poi_mgrs: "38S LB 44700 96300", poi: [34.27, 36.24], type: "Artillery", qty: 3, dtg: "20250820 0300Z", unit: "101AB", fuse: "Delay", damage: "Light", counterfire: false },
+    { id: 14, poo_mgrs: "38S LB 44500 95800", poo: [34.20, 36.18], poi_mgrs: "38S LB 45000 96000", poi: [34.23, 36.21], type: "Mortar", qty: 6, dtg: "20250820 1500Z", unit: "101AB", fuse: "VT", damage: "Minimal", counterfire: true },
+    { id: 15, poo_mgrs: "38S LB 44100 95900", poo: [34.21, 36.19], poi_mgrs: "38S LB 44600 96100", poi: [34.24, 36.22], type: "Rocket", qty: 7, dtg: "20250820 1600Z", unit: "101AB", fuse: "PD", damage: "Moderate", counterfire: false },
+    { id: 16, poo_mgrs: "38S LB 44350 96050", poo: [34.23, 36.20], poi_mgrs: "38S LB 44850 96250", poi: [34.26, 36.23], type: "Artillery", qty: 4, dtg: "20250820 1800Z", unit: "101AB", fuse: "Delay", damage: "Minimal", counterfire: true },
+
+    // 82AB (5 acquisitions)
+    { id: 17, poo_mgrs: "38S LB 43000 95800", poo: [34.19, 36.18], poi_mgrs: "38S LB 43500 96000", poi: [34.22, 36.21], type: "Mortar", qty: 5, dtg: "20250820 0600Z", unit: "82AB", fuse: "VT", damage: "Light", counterfire: false },
+    { id: 18, poo_mgrs: "38S LB 43100 95900", poo: [34.20, 36.19], poi_mgrs: "38S LB 43600 96100", poi: [34.23, 36.22], type: "Rocket", qty: 4, dtg: "20250820 1000Z", unit: "82AB", fuse: "PD", damage: "Moderate", counterfire: true },
+    { id: 19, poo_mgrs: "38S LB 43250 95750", poo: [34.18, 36.17], poi_mgrs: "38S LB 43750 95950", poi: [34.21, 36.20], type: "Artillery", qty: 6, dtg: "20250820 1400Z", unit: "82AB", fuse: "Delay", damage: "Minimal", counterfire: false },
+    { id: 20, poo_mgrs: "38S LB 43300 95600", poo: [34.17, 36.16], poi_mgrs: "38S LB 43800 95800", poi: [34.20, 36.19], type: "Mortar", qty: 7, dtg: "20250820 2200Z", unit: "82AB", fuse: "VT", damage: "None", counterfire: true },
+    { id: 21, poo_mgrs: "38S LB 43400 95500", poo: [34.16, 36.15], poi_mgrs: "38S LB 43900 95700", poi: [34.19, 36.18], type: "Rocket", qty: 3, dtg: "20250820 0300Z", unit: "82AB", fuse: "PD", damage: "Light", counterfire: false }
+  ];
+
+  const typeColors = {
+    "Mortar": "yellow",
+    "Rocket": "red",
+    "Artillery": "purple"
+  };
+
+  // Add markers, lines, and heatmap points
+  const heatPoints = [];
+  acquisitions.forEach(entry => {
+    // POO marker
+    L.circleMarker(entry.poo, {
+      color: typeColors[entry.type],
+      radius: 6,
+      fillOpacity: 0.7,
+      weight: 1,
+      fillColor: typeColors[entry.type]
+    }).addTo(map).bindPopup(
+      `<b>Unit:</b> ${entry.unit}<br><b>POO MGRS:</b> ${entry.poo_mgrs}<br><b>Type:</b> ${entry.type}<br><b>Qty:</b> ${entry.qty}<br><b>DTG:</b> ${entry.dtg}`
+    );
+
+    // POI marker
+    L.circleMarker(entry.poi, {
+      color: typeColors[entry.type],
+      radius: 8,
+      fillOpacity: 0.9,
+      weight: 1,
+      fillColor: typeColors[entry.type]
+    }).addTo(map).bindPopup(
+      `<b>Unit:</b> ${entry.unit}<br><b>POI MGRS:</b> ${entry.poi_mgrs}<br><b>Damage:</b> ${entry.damage}`
+    );
+
+    // Dashed line POO→POI
+    L.polyline([entry.poo, entry.poi], {
+      color: typeColors[entry.type],
+      dashArray: '6, 10',
+      weight: 2
+    }).addTo(map);
+
+    // Heatmap point weighted by qty
+    heatPoints.push([entry.poi[0], entry.poi[1], entry.qty]);
+  });
+
+  L.heatLayer(heatPoints, {
+    radius: 25,
+    blur: 20,
+    maxZoom: 12,
+    gradient: {
+      0.2: 'blue',
+      0.4: 'lime',
+      0.6: 'yellow',
+      0.8: 'orange',
+      1.0: 'red'
+    }
+  }).addTo(map);
+
+  // Summarize data per unit for tables
+  const units = [...new Set(acquisitions.map(a => a.unit))];
+  const tablesContainer = document.getElementById("tables-container");
+
+  units.forEach(unit => {
+    const unitData = acquisitions.filter(a => a.unit === unit);
+
+    // Count acquisitions by type
+    const typeCounts = { Mortar: 0, Rocket: 0, Artillery: 0 };
+    let totalQty = 0;
+    let counterfireCount = 0;
+
+    let minDTG = null;
+    let maxDTG = null;
+
+    unitData.forEach(entry => {
+      typeCounts[entry.type]++;
+      totalQty += entry.qty;
+      if (entry.counterfire) counterfireCount++;
+
+      // parse DTG string YYYYMMDD HHMMZ → to Date object
+      const dtgStr = entry.dtg;
+      const dtgDate = new Date(Date.UTC(
+        parseInt(dtgStr.slice(0,4)),
+        parseInt(dtgStr.slice(4,6)) -1,
+        parseInt(dtgStr.slice(6,8)),
+        parseInt(dtgStr.slice(9,11)),
+        parseInt(dtgStr.slice(11,13))
+      ));
+      if (!minDTG || dtgDate < minDTG) minDTG = dtgDate;
+      if (!maxDTG || dtgDate > maxDTG) maxDTG = dtgDate;
+    });
+
+    // Format min/max DTG to YYYYMMDD HHMMZ string
+    function formatDTG(d) {
+      const Y = d.getUTCFullYear();
+      const M = String(d.getUTCMonth()+1).padStart(2,'0');
+      const D = String(d.getUTCDate()).padStart(2,'0');
+      const h = String(d.getUTCHours()).padStart(2,'0');
+      const m = String(d.getUTCMinutes()).padStart(2,'0');
+      return `${Y}${M}${D} ${h}${m}Z`;
+    }
+
+    const tableHTML = `
+      <div class="unit-table">
+        <h3>Unit: ${unit}</h3>
+        <table class="table table-dark table-striped table-bordered">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th># Acquisitions</th>
+              <th>Total Qty Fired</th>
+              <th>DTG Range (UTC)</th>
+              <th>Counterfire Missions Executed</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Mortar</td>
+              <td>${typeCounts.Mortar}</td>
+              <td>${unitData.filter(a => a.type === "Mortar").reduce((s,a) => s+a.qty,0)}</td>
+              <td rowspan="3">${formatDTG(minDTG)} - ${formatDTG(maxDTG)}</td>
+              <td rowspan="3">${counterfireCount}</td>
+            </tr>
+            <tr>
+              <td>Rocket</td>
+              <td>${typeCounts.Rocket}</td>
+              <td>${unitData.filter(a => a.type === "Rocket").reduce((s,a) => s+a.qty,0)}</td>
+            </tr>
+            <tr>
+              <td>Artillery</td>
+              <td>${typeCounts.Artillery}</td>
+              <td>${unitData.filter(a => a.type === "Artillery").reduce((s,a) => s+a.qty,0)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+    tablesContainer.insertAdjacentHTML('beforeend', tableHTML);
+  });
+
+  // Build histogram (number of acquisitions per Zulu hour)
+  const hours = Array(24).fill(0);
+  acquisitions.forEach(entry => {
+    // dtg format: YYYYMMDD HHMMZ → get HH
+    const hour = parseInt(entry.dtg.slice(9,11));
+    hours[hour]++;
+  });
+
+  const maxCount = Math.max(...hours);
+  const histogram = document.getElementById("histogram");
+  hours.forEach((count, i) => {
+    const height = maxCount > 0 ? (count / maxCount) * 100 : 1;
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    bar.style.height = height + "px";
+    bar.title = `${String(i).padStart(2,'0')}Z: ${count} acquisition${count !== 1 ? 's' : ''}`;
+    histogram.appendChild(bar);
+  });
+</script>
+
+</body>
+</html>
